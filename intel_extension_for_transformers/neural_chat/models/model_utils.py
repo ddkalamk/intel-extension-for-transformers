@@ -789,15 +789,26 @@ def load_model(
 
         if device == "cpu":
             if torch_dtype == torch.bfloat16 and not ipex_int8:
-                import intel_extension_for_pytorch as intel_ipex
+                print(model)
+                use_tpp = True
+                if not use_tpp:
+                    import intel_extension_for_pytorch as intel_ipex
 
-                model = intel_ipex.optimize(
-                    model.eval(),
-                    dtype=torch_dtype,
-                    inplace=True,
-                    level="O1",
-                    auto_kernel_selection=True,
-                )
+                    model = intel_ipex.optimize(
+                        model.eval(),
+                        dtype=torch_dtype,
+                        inplace=True,
+                        level="O1",
+                        auto_kernel_selection=True,
+                    )
+
+                else:
+                    if model.config.architectures[0] in ["LLaMAForCausalLM", "LlamaForCausalLM"]:
+                        from tpp_pytorch_extension.llm.fused_llama_infer import OptimizeModelForLlama
+                        OptimizeModelForLlama(model, dtype=torch_dtype, device=device)
+
+                print(model)
+
                 if cpu_jit and (re.search("mpt-7b", model_name, re.IGNORECASE)
                                 or re.search("neural-chat-7b-v1", model_name, re.IGNORECASE)):
                     from intel_extension_for_transformers.llm.utils.mpt_trace import \
@@ -1023,7 +1034,7 @@ def predict_stream(**params):
     force_words_ids = params["force_words_ids"] if "force_words_ids" in params else None
     use_hpu_graphs = params["use_hpu_graphs"] if "use_hpu_graphs" in params else False
     use_cache = params["use_cache"] if "use_cache" in params else True
-    return_stats = params["return_stats"] if "return_stats" in params else False
+    return_stats = True #params["return_stats"] if "return_stats" in params else False
     format_version = params["format_version"] if "format_version" in params else "v2"
     prompt = params["prompt"]
     ipex_int8 = params["ipex_int8"] if "ipex_int8" in params else False

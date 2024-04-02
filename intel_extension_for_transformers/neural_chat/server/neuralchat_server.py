@@ -299,7 +299,8 @@ class NeuralChatServerExecutor(BaseCommandExecutor):
                     hf_access_token = os.environ.get("HF_ACCESS_TOKEN", None)
                     multi_cpu_server_file = os.path.abspath(
                         os.path.join(os.path.dirname(__file__), './multi_cpu_server.py'))
-                    launch_str = f"deepspeed hostfile ./config/hostfile {multi_cpu_server_file}"
+                    #launch_str = f"deepspeed hostfile ./config/hostfile {multi_cpu_server_file}"
+                    launch_str = f"run_dist_numa.sh -np {world_size} python -u {multi_cpu_server_file}"
                     command_list = f"{launch_str} --use_kv_cache --task chat --base_model_path {model_name_or_path} \
                         --host {host} --port {port} --hf_access_token {hf_access_token}"
                     try:

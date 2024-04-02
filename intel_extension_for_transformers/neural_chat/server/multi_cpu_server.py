@@ -201,6 +201,13 @@ def parse_args():
     )
     parser.add_argument(
         "--return_stats", action='store_true', default=False,)
+    parser.add_argument(
+        "--dist_backend",
+        type=str,
+        default="ccl",
+        choices=["ccl", "mpi"],
+        help="Distributed backend",
+    )
     args = parser.parse_args()
     return args
 
@@ -266,7 +273,7 @@ def warmup(chatbot, local_rank, gen_config):
     print("\n"*3)
 
 
-@app.post("/v1/chat_completions")
+@app.post("/v1/code_generation")
 async def chat_completion_endpoint(request: ChatCompletionRequest):
     ret = check_completion_request(request)
     if ret is not None:
@@ -294,11 +301,47 @@ async def chat_completion_endpoint(request: ChatCompletionRequest):
         logger.info(f"Chat completion finished.")
         return ChatCompletionResponse(response=response)
 
+def dist_init(args):
+    import os
+    import torch
+
+    global my_rank
+    global my_size
+    if int(os.environ.get("PMI_SIZE", "0")) > 1:
+        if args.dist_backend == "ccl":
+            try:
+                import oneccl_bindings_for_pytorch
+            except:
+                print(
+                    "CCL backend requested but import oneccl_bindings_for_pytorch failed"
+                )
+                raise
+        elif args.dist_backend == "mpi":
+            if not torch.distributed.is_mpi_available():
+                try:
+                    import torch_mpi
+                except:
+                    print(
+                        "MPI backend requested but not available try installing torch_mpi module"
+                    )
+                    raise
+        else:
+            raise ValueError(f"{args.dist_backend} backend requested but not supported")
+
+        os.environ["RANK"] = os.environ.get("PMI_RANK", "0")
+        os.environ["WORLD_SIZE"] = os.environ.get("PMI_SIZE", "1")
+        torch.distributed.init_process_group(backend=args.dist_backend)
+        my_rank = torch.distributed.get_rank()
+        my_size = torch.distributed.get_world_size()
+        args.local_rank=my_rank
+        print(f"My rank: {my_rank} size: {my_size}")
+
 
 if __name__ == "__main__":
     args = parse_args()
     check_args(args)
     set_seed(args.seed)
+    dist_init(args)
 
     chatbot, gen_config = construct_chatbot(args)
     warmup(chatbot, args.local_rank, gen_config)
